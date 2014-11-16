@@ -83,10 +83,49 @@ class XBeeController(object):
         checksum = calc_checksum(frame[3:])
         frame += chr(checksum)
 
-        print ">>> ", format_bytes(frame)
+        print ">>>", format_bytes(frame)
 
         self.fh.write(frame)
         return frame_no
+
+    def handle_at_response(self, expected_frame_no, multi_response, 
+                           remote_command=False):
+        response_offset = 2 # frameno, id
+        if remote_command:
+            expected_response = self.REMOTE_COMMAND_RESPONSE
+            response_offset += 8 + 2
+        else:
+            expected_response = self.AT_COMMAND_RESPONSE
+
+        while True:
+            resp=self.read_frame()
+
+            (rx_id, rx_frame_no) = unpack(">BB", resp[0:2])
+
+            if rx_frame_no != expected_frame_no:
+                raise Exception("Unexpected seqno %02x" % resp[1])
+
+            if rx_id != expected_response:
+                raise Exception("Unexpected response type %02x" % rt)
+
+            (cmdname,rc) = unpack(">2sB", resp[response_offset:
+                                               response_offset+3])
+
+            if rc != 0:
+                print "<< ERROR %i" % rc
+                raise Exception("Error from API command")
+
+            result = resp[response_offset+3:]
+            print "<< OK", format_bytes(result)
+
+            if not multi_response:
+                yield result
+                return
+
+            if len(result) == 0:
+                return
+
+            yield result
 
     def at_command(self, cmd, multi_response=False):
         """send an AT command using the API, and return the result
@@ -96,43 +135,12 @@ class XBeeController(object):
         multi_response: True if command results in multiple responses. In this
           case, response will be a list
 
-        returns: result bytes
-
+        returns: list of result strings
         """
 
         print ">> %s" % cmd
         frame_no = self.send_frame(self.AT_COMMAND, cmd)
-
-        results = []
-        while True:
-            resp=self.read_frame()
-
-            (rx_id, rx_frame_no, rc) = unpack(">BBxxB", resp[0:5])
-
-            if rx_frame_no != frame_no:
-                raise Exception("Unexpected seqno %02x" % resp[1])
-
-            if rx_id != self.AT_COMMAND_RESPONSE:
-                raise Exception("Unexpected response type %02x" % rt)
-
-            if rc != 0:
-                print "<< ERROR %i" % rc
-                raise Exception("Error from API command")
-
-            result = resp[5:]
-            print "<< OK", format_bytes(result)
-
-            if not multi_response:
-                return result
-
-            if len(result) == 0:
-                return results
-
-            results.append(result)
-
-            if multi_response and len(result) == 0:
-                return results
-
+        return self.handle_at_response(frame_no, multi_response)
 
     def remote_at_command(self, dest, cmd, opts=0, multi_response=False):
         """send a remote AT command, and return the result
@@ -144,7 +152,7 @@ class XBeeController(object):
         multi_response: True if command results in multiple responses. In this
           case, response will be a list
 
-        returns: result bytes
+        returns: list of result strings
         """
 
         print ">> (%x) %s" % (dest, cmd)
@@ -157,35 +165,7 @@ class XBeeController(object):
         api_frame = pack(">QHB2s",dest_64,dest_16,opts,cmd)
         frame_no = self.send_frame(self.REMOTE_AT_COMMAND, api_frame)
 
-        results = []
-        while True:
-            resp=self.read_frame()
-
-            (rx_id, rx_frame_no, rc) = unpack(">BB 8x 2x 2x B", resp[0:15])
-
-            if rx_frame_no != frame_no:
-                raise Exception("Unexpected seqno %02x" % resp[1])
-
-            if rx_id != self.REMOTE_COMMAND_RESPONSE:
-                raise Exception("Unexpected response type %02x" % rt)
-
-            if rc != 0:
-                print "<< ERROR %i" % rc
-                raise Exception("Error from API command")
-
-            result = resp[15:]
-            print "<< OK", format_bytes(result)
-
-            if not multi_response:
-                return result
-
-            if len(result) == 0:
-                return results
-
-            results.append(result)
-                
-            if multi_response and len(result) == 0:
-                return results
+        return self.handle_at_response(frame_no, multi_response, True)
 
 def send_nd_command(ctl):
     r = ctl.at_command("ND", True)
@@ -204,8 +184,8 @@ def send_nd_command(ctl):
 
 def writer(ctl):
     send_nd_command(ctl)
-    ctl.remote_at_command(0x0013a200406899a9,
-                          "GT")
+    print list(ctl.remote_at_command(0x0013a200406899a9,
+                                "GT"))
 
 def await_at_response(fh, timeout=3):
     buf=""
