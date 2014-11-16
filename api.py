@@ -17,6 +17,17 @@ def format_bytes(frame):
     """
     return " ".join(("%02x" % ord(b) for b in frame))
 
+def format_arg_val(val):
+    """ format integer argument into byte string
+    """
+    if val is None:
+        return ""
+    if val < 0x10000:
+        return pack(">H", val)
+    if val < 0x100000000:
+        return pack(">L", val)
+    return pack(">Q", val)
+
 class XBeeController(object):
     AT_COMMAND=0x08
     REMOTE_AT_COMMAND = 0x17
@@ -29,6 +40,8 @@ class XBeeController(object):
     def __init__(self, dev="/dev/ttyS1"):
         self.fh=open('/dev/ttyS1','rw+',0)
         self.configure()
+
+        self.dump_api_frames = False
 
     def configure(self):
         flags = termios.tcgetattr(self.fh)
@@ -52,14 +65,16 @@ class XBeeController(object):
             ch = self.fh.read(1)
             if ord(ch) == self.API_DELIMITER:
                 break
-            print "<<< ", ch
+            if self.dump_api_frames:
+                print "<<< ", ch
 
         len_bytes = self.fh.read(2)
         length = unpack(">H",len_bytes)
         frame = self.fh.read(length[0])
         cs = self.fh.read(1)
 
-        print "<<<", format_bytes(ch + len_bytes + frame + cs)
+        if self.dump_api_frames:
+            print "<<<", format_bytes(ch + len_bytes + frame + cs)
 
         if ord(cs) != calc_checksum(frame):
             raise Exception("mismatched checksum")
@@ -83,7 +98,8 @@ class XBeeController(object):
         checksum = calc_checksum(frame[3:])
         frame += chr(checksum)
 
-        print ">>>", format_bytes(frame)
+        if self.dump_api_frames:
+            print ">>>", format_bytes(frame)
 
         self.fh.write(frame)
         return frame_no
@@ -127,7 +143,7 @@ class XBeeController(object):
 
             yield result
 
-    def at_command(self, cmd, multi_response=False):
+    def at_command(self, cmd, arg_val=None, multi_response=False):
         """send an AT command using the API, and return the result
 
         cmd: 2-letter AT command
@@ -138,11 +154,13 @@ class XBeeController(object):
         returns: list of result strings
         """
 
-        print ">> %s" % cmd
-        frame_no = self.send_frame(self.AT_COMMAND, cmd)
-        return self.handle_at_response(frame_no, multi_response)
+        print ">>", cmd, "" if arg_val is None else arg_val
+        arg_string = format_arg_val(arg_val)
+        frame_no = self.send_frame(self.AT_COMMAND, cmd+arg_string)
+        return list(self.handle_at_response(frame_no, multi_response))
 
-    def remote_at_command(self, dest, cmd, opts=0, multi_response=False):
+    def remote_at_command(self, dest, cmd, arg_val=None, opts=0,
+                          multi_response=False):
         """send a remote AT command, and return the result
 
         dest: destination address
@@ -155,17 +173,18 @@ class XBeeController(object):
         returns: list of result strings
         """
 
-        print ">> (%x) %s" % (dest, cmd)
+        print ">> (%x)" % dest, cmd, "" if arg_val is None else arg_val
+        arg_string = format_arg_val(arg_val)
         if dest >= 0xFFFF:
             dest_16 = 0xFFFE
             dest_64 = dest
         else:
             dest_64 = 0
             dest_16 = dest
-        api_frame = pack(">QHB2s",dest_64,dest_16,opts,cmd)
+        api_frame = pack(">QHB",dest_64,dest_16,opts)+cmd+arg_string
         frame_no = self.send_frame(self.REMOTE_AT_COMMAND, api_frame)
 
-        return self.handle_at_response(frame_no, multi_response, True)
+        return list(self.handle_at_response(frame_no, multi_response, True))
 
 def send_nd_command(ctl):
     r = ctl.at_command("ND", True)
@@ -182,10 +201,19 @@ def send_nd_command(ctl):
         print "NI: %s" % ni
         print
 
+node_2 = 0x0013a200406899a9
+
 def writer(ctl):
-    send_nd_command(ctl)
-    print list(ctl.remote_at_command(0x0013a200406899a9,
-                                "GT"))
+    #send_nd_command(ctl)
+    ctl.at_command("IR",10)
+
+    ctl.remote_at_command(node_2, "GT", arg_val=1000)
+    ctl.remote_at_command(node_2, "GT")
+    ctl.remote_at_command(node_2, "ST")
+    ctl.remote_at_command(node_2, "SP")
+    ctl.remote_at_command(node_2, "AC")
+    ctl.remote_at_command(node_2, "WR")
+
 
 def await_at_response(fh, timeout=3):
     buf=""
