@@ -8,9 +8,23 @@ import sys
 import termios
 import time
 
+
+def calc_checksum(frame):
+    return 0xFF - (sum([ord(f) for f in frame]) & 0xFF)
+
+def format_bytes(frame):
+    """ format bytes as hex string
+    """
+    return " ".join(("%02x" % ord(b) for b in frame))
+
 class XBeeController(object):
     AT_COMMAND=0x08
-    AT_COMMAND_RESPONSE = 0x88
+    REMOTE_AT_COMMAND = 0x17
+    RESPONSE_BIT = 0x80
+    AT_COMMAND_RESPONSE = AT_COMMAND + RESPONSE_BIT
+    REMOTE_COMMAND_RESPONSE = REMOTE_AT_COMMAND + RESPONSE_BIT
+
+    API_DELIMITER = 0x7E
 
     def __init__(self, dev="/dev/ttyS1"):
         self.fh=open('/dev/ttyS1','rw+',0)
@@ -30,26 +44,24 @@ class XBeeController(object):
         """
         wait for an API frame, and read it
 
-        returns: list of bytes
+        returns: string
         """
+
+        # await delimiter
         while True:
             ch = self.fh.read(1)
-            if ord(ch) == 0x7e:
+            if ord(ch) == self.API_DELIMITER:
                 break
-            print "<<< ",ch
+            print "<<< ", ch
 
         len_bytes = self.fh.read(2)
         length = unpack(">H",len_bytes)
         frame = self.fh.read(length[0])
         cs = self.fh.read(1)
 
-        print "<<< ",
-        for a in ch + len_bytes + frame + cs:
-            print ("%02x" % ord(a)),
-        print
+        print "<<<", format_bytes(ch + len_bytes + frame + cs)
 
-        frame = [ord(f) for f in frame]
-        if ord(cs) != 0xFF - (sum(frame) & 0xFF):
+        if ord(cs) != calc_checksum(frame):
             raise Exception("mismatched checksum")
         return frame
 
@@ -58,24 +70,22 @@ class XBeeController(object):
         send an API frame
 
         api_identifier: integer api identifier
-        api_frame: list of bytes
+        api_frame: string of api bytes
 
         returns: frame number
         """
 
         frame_no = 1
-        frame = [api_identifier, frame_no] + [b for b in api_frame]
-        checksum = 0xFF - (sum(frame) & 0xFF)
-        len_bytes = pack(">BH",0x7E,len(frame))
-        string = len_bytes + ''.join([chr(f) for f in frame]) + \
-                 chr(checksum)
+        frame_len = len(api_frame)+2
+        frame = pack(">BHBB", self.API_DELIMITER,
+                     frame_len, api_identifier, frame_no) + \
+                api_frame
+        checksum = calc_checksum(frame[3:])
+        frame += chr(checksum)
 
-        print ">>> ",
-        for a in string:
-            print ("%02x" % ord(a)),
-        print
+        print ">>> ", format_bytes(frame)
 
-        self.fh.write(string)
+        self.fh.write(frame)
         return frame_no
 
     def at_command(self, cmd, multi_response=False):
@@ -91,25 +101,80 @@ class XBeeController(object):
         """
 
         print ">> %s" % cmd
-        api_frame = [ord(cmd[0]),ord(cmd[1])]
-        frame_no = self.send_frame(self.AT_COMMAND, api_frame)
+        frame_no = self.send_frame(self.AT_COMMAND, cmd)
 
         results = []
         while True:
             resp=self.read_frame()
 
-            if resp[1] != frame_no:
+            (rx_id, rx_frame_no, rc) = unpack(">BBxxB", resp[0:5])
+
+            if rx_frame_no != frame_no:
                 raise Exception("Unexpected seqno %02x" % resp[1])
 
-            if resp[0] != self.AT_COMMAND_RESPONSE:
+            if rx_id != self.AT_COMMAND_RESPONSE:
                 raise Exception("Unexpected response type %02x" % rt)
 
-            if resp[4] != 0:
-                print "<< ERROR %i" % resp[4]
+            if rc != 0:
+                print "<< ERROR %i" % rc
                 raise Exception("Error from API command")
 
             result = resp[5:]
-            print "<< OK %s" % (" ".join(("%02x" % b for b in result)))
+            print "<< OK", format_bytes(result)
+
+            if not multi_response:
+                return result
+
+            if len(result) == 0:
+                return results
+
+            results.append(result)
+
+            if multi_response and len(result) == 0:
+                return results
+
+
+    def remote_at_command(self, dest, cmd, opts=0, multi_response=False):
+        """send a remote AT command, and return the result
+
+        dest: destination address
+        cmd: 2-letter AT command
+        opts: command options
+
+        multi_response: True if command results in multiple responses. In this
+          case, response will be a list
+
+        returns: result bytes
+        """
+
+        print ">> (%x) %s" % (dest, cmd)
+        if dest >= 0xFFFF:
+            dest_16 = 0xFFFE
+            dest_64 = dest
+        else:
+            dest_64 = 0
+            dest_16 = dest
+        api_frame = pack(">QHB2s",dest_64,dest_16,opts,cmd)
+        frame_no = self.send_frame(self.REMOTE_AT_COMMAND, api_frame)
+
+        results = []
+        while True:
+            resp=self.read_frame()
+
+            (rx_id, rx_frame_no, rc) = unpack(">BB 8x 2x 2x B", resp[0:15])
+
+            if rx_frame_no != frame_no:
+                raise Exception("Unexpected seqno %02x" % resp[1])
+
+            if rx_id != self.REMOTE_COMMAND_RESPONSE:
+                raise Exception("Unexpected response type %02x" % rt)
+
+            if rc != 0:
+                print "<< ERROR %i" % rc
+                raise Exception("Error from API command")
+
+            result = resp[15:]
+            print "<< OK", format_bytes(result)
 
             if not multi_response:
                 return result
@@ -122,15 +187,13 @@ class XBeeController(object):
             if multi_response and len(result) == 0:
                 return results
 
-
-def writer(ctl):
+def send_nd_command(ctl):
     r = ctl.at_command("ND", True)
     for node in r:
-        nodestr = "".join((chr(b) for b in node))
         fmt = ">HLLB"
         fmtlen = calcsize(fmt)
-        (my,sh,sl,db) = unpack(fmt,nodestr[0:fmtlen])
-        ni = nodestr[fmtlen:-1]
+        (my,sh,sl,db) = unpack(fmt,node[0:fmtlen])
+        ni = node[fmtlen:-1]
 
         print "MY: %04x" % my
         print "SH: %08x" % sh
@@ -138,6 +201,11 @@ def writer(ctl):
         print "DB: %02x" % db
         print "NI: %s" % ni
         print
+
+def writer(ctl):
+    send_nd_command(ctl)
+    ctl.remote_at_command(0x0013a200406899a9,
+                          "GT")
 
 def await_at_response(fh, timeout=3):
     buf=""
