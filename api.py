@@ -50,12 +50,16 @@ class XBeeController(object):
             raise Exception("mismatched checksum")
         return frame
 
-    def send_frame(self, frame):
+    def send_frame(self, api_identifier, frame_no, api_frame):
         """
         send an API frame
 
-        frame: list of bytes
+        api_identifier: integer api identifier
+        frame_no: integer frame number
+        api_frame: list of bytes
         """
+
+        frame = [api_identifier, frame_no] + [b for b in api_frame]
         checksum = 0xFF - (sum(frame) & 0xFF)
         len_bytes = pack(">BH",0x7E,len(frame))
         string = len_bytes + ''.join([chr(f) for f in frame]) + \
@@ -68,36 +72,49 @@ class XBeeController(object):
 
         self.fh.write(string)
 
-    def at_command(self, cmd):
+    def api_command(self, api_identifier, api_frame):
         """
-        send an AT command, and return the result
-        
-        returns: integer result, or None on error
-        """
+        send an api frame, and await the response
 
-        print ">> %s" % cmd
+        api_identifier: integer api identifier
+        api_frame: list of bytes
+
+        returns tuple (response_type,[result_bytes])
+        """
         frameno = 1
-        frame = (0x08,frameno,ord(cmd[0]),ord(cmd[1]))
-        self.send_frame(frame)
+        self.send_frame(api_identifier, frameno, api_frame)
         resp=self.read_frame()
-        if resp[0] != 0x88:
-            raise Exception("Unexpected response type %02x" % resp[0])
         
         if resp[1] != frameno:
             raise Exception("Unexpected seqno %02x" % resp[1])
 
-        if resp[4] != 0:
+        return (resp[0], resp[2:])
+
+    def at_command(self, cmd):
+        """
+        send an AT command using the API, and return the result
+
+        returns: integer result, or None on error
+        """
+
+        print ">> %s" % cmd
+        (rt, rb) = self.api_command(0x08,[ord(cmd[0]),ord(cmd[1])])
+
+        if rt != 0x88:
+            raise Exception("Unexpected response type %02x" % rt)
+
+        if rb[2] != 0:
             print "<< ERROR"
             return None
 
         s = 0
-        for b in resp[5:]:
+        for b in rb[3:]:
             s <<= 8
             s |= b
 
         print ">> OK %i" % s
         return s
-        
+
 
 def writer(ctl):
     r = ctl.at_command("DL")
