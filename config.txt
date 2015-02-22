@@ -1,0 +1,90 @@
+minicom setup
+
+pu baudrate         9600
+pu bits             8
+pu parity           N
+pu stopbits         1
+pu localecho        Yes
+pu addlinefeed      Yes
+
+/dev/ttyUSB0 (with h/w flow control) for USB; 
+/dev/ttyS1 (without flow control) on buffy
+
+
+Master
+======
+
+# command mode timeout (100ms)
+ATCT 1000
+
+# command mode guard time (ms)
+ATGT 1F4
+
+# enable API mode
+ATAP 1
+
+# PAN ID
+ATID 5942
+
+# channel
+ATCH C
+
+# Coordinator enable
+ATCE 1
+
+# Coordinator association mode
+ATA2 4
+
+# Destination address
+ATDL 1
+
+# node id
+ATNI node 0
+
+# commit
+ATWR
+ATCN
+
+Remote
+======
+# command mode timeout (100ms)
+ATCT 1000
+
+# command mode guard time (ms)
+ATGT C8
+
+# PAN ID
+ATID 5942
+
+# channel
+ATCH C
+
+# association mode
+ATA1 4
+
+# source address
+ATMY 1
+
+# node id
+ATNI node 1
+
+# time between sleeps (ms) (=10ms)
+ATST A
+
+# sleep duration (10ms) (=15s)
+ATSP 5DC
+
+# sleep mode
+ATSM 5
+
+# DI0/1/2/3 are inputs
+ATD03
+ATD13
+ATD23
+ATD33
+
+# disable pullup resistors (except DIN)
+ATPR80
+
+ATWR
+ATCN
