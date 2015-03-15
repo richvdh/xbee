@@ -20,21 +20,9 @@ CARBON_METRIC = "19cw.gas.usage"
 logger = logging.getLogger(__name__)
 
 
-class Counter(object):
-    counter = 0
-    last = None
-    sock = None
-
-    def load_state(self):
-        with open(STATE_FILE) as f:
-            r = f.readline().rstrip('\n')
-            self.counter = int(r)
-
-    def save_state(self):
-        tmp = STATE_FILE+".new"
-        with open(tmp,"w") as f:
-            f.write("%i\n" % self.counter)
-        shutil.move(tmp, STATE_FILE)
+class CarbonClient(object):
+    def __init__(self):
+        self.sock = None
 
     def connect(self):
         self.sock = socket.socket()
@@ -56,6 +44,25 @@ class Counter(object):
             self.connect()
             self.sock.sendall(msg)
 
+
+class Counter(object):
+    def __init__(self):
+        self.counter = 0
+        self.last = None
+        self.carbon_client = CarbonClient()
+
+    def load_state(self):
+        with open(STATE_FILE) as f:
+            r = f.readline().rstrip('\n')
+            self.counter = int(r)
+            logger.info("initialised state from state file: %i", self.counter)
+
+    def save_state(self):
+        tmp = STATE_FILE+".new"
+        with open(tmp,"w") as f:
+            f.write("%i\n" % self.counter)
+        shutil.move(tmp, STATE_FILE)
+
     def on_api_frame(self, address, strength, data):
         reading = data['dio']
         if self.last is not None:
@@ -64,13 +71,13 @@ class Counter(object):
                 inc += 16
             self.counter += inc
         else:
-            logger.info("initialised with first reading=%i" % reading)
+            logger.info("initialised with first reading=%i", reading)
         self.last = reading
 
         self.save_state()
 
         try:
-            self.write("%s %i %i\n" % (
+            self.carbon_client.write("%s %i %i\n" % (
                 CARBON_METRIC,
                 self.counter,
                 time.time()))
