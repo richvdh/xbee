@@ -58,11 +58,13 @@ class Counter(object):
 
     def on_api_frame(self, address, strength, data):
         reading = data['dio']
-        if self.last:
+        if self.last is not None:
             inc = reading - self.last
             if inc < 0:
                 inc += 16
             self.counter += inc
+        else:
+            logger.info("initialised with first reading=%i" % reading)
         self.last = reading
 
         self.save_state()
@@ -76,7 +78,12 @@ class Counter(object):
             logger.exception("Error sending reading to graphite server")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        filename="/var/log/xbee.log",
+        format="%(asctime)-15s %(levelname)-5s %(name)s:%(message)s",
+        level=logging.DEBUG)
+
+    logger.info("Starting")
 
     counter = Counter()
     counter.load_state()
