@@ -76,7 +76,10 @@ class Counter(object):
             logger.exception("Error sending reading to graphite server")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        filename="/var/log/xbee.log",
+        format="%(asctime)-15s %(levelname)-5s %(name)s:%(message)s",
+        level=logging.DEBUG)
 
     counter = Counter()
     counter.load_state()
