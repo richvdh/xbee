@@ -3,18 +3,17 @@
 # listens for messages from the XBee and dispatches the readings to a graphite
 # server
 
-# TODO: handle incoming data in a separate thread, so that we get accurate
+# TODO: handle sending data in a separate thread, so that we get accurate
 # timestamps even when the sender thread gets behind
 #
 # TODO: run under supervisord
 #
-# TODO: rotate the logfiles
-#
-# TODO: warn if we do not get a reading for a while
+# TODO: send an email if we do not get a reading for a while
 #
 # TODO: reduce sample frequency
 
 import logging
+import logging.config
 import shutil
 import socket
 import time
@@ -25,6 +24,7 @@ from xbee_controller import XBeeController
 CACERTS_PATH = '/etc/ssl/certs/ca-certificates.crt'
 
 STATE_FILE = '/var/run/xbee/state'
+LOG_FILE = '/var/log/xbee/xbee.log'
 
 # connect via IP to force a connection over the VPN
 CARBON_SERVER = '10.87.87.1'
@@ -147,11 +147,24 @@ class Counter(object):
             logger.exception("Error sending reading to graphite server")
 
 
+def configure_logging():
+    formatter = logging.Formatter(
+        '%(asctime)-15s %(levelname)-5s %(name)s:%(message)s')
+
+    handler = logging.handlers.TimedRotatingFileHandler(
+        filename=LOG_FILE,
+        when='midnight',
+        backupCount=5,
+    )
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.DEBUG)
+
+
 if __name__ == "__main__":
-    logging.basicConfig(
-        filename="/var/log/xbee.log",
-        format="%(asctime)-15s %(levelname)-5s %(name)s:%(message)s",
-        level=logging.DEBUG)
+    configure_logging()
 
     logger.info("Starting")
 
