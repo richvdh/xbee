@@ -7,6 +7,12 @@
 # timestamps even when the sender thread gets behind
 #
 # TODO: run under supervisord
+#
+# TODO: rotate the logfiles
+#
+# TODO: warn if we do not get a reading for a while
+#
+# TODO: reduce sample frequency
 
 import logging
 import shutil
