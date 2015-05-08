@@ -11,13 +11,16 @@ pu addlinefeed      Yes
 /dev/ttyS1 (without flow control) on buffy
 
 
+It's worth noting that the sleep times are best set *after* everything else
+is working, as waiting minutes for everything to happen is very tiresome.
+
 Master
 ======
 
-# command mode timeout (100ms)
+# command mode timeout (100ms) (=409.6s)
 ATCT 1000
 
-# command mode guard time (ms)
+# command mode guard time (ms) (=500ms)
 ATGT 1F4
 
 # enable API mode
@@ -41,16 +44,23 @@ ATDL 1
 # node id
 ATNI node 0
 
+# make the sleep times match the remote
+# time between sleeps (ms) (=10ms)
+ATST A
+
+# sleep duration (10ms) (=120s)
+ATSP 2EE0
+
 # commit
 ATWR
 ATCN
 
 Remote
 ======
-# command mode timeout (100ms)
+# command mode timeout (100ms) (=409.6s)
 ATCT 1000
 
-# command mode guard time (ms)
+# command mode guard time (ms) (=200ms)
 ATGT C8
 
 # PAN ID
@@ -71,8 +81,8 @@ ATNI node 1
 # time between sleeps (ms) (=10ms)
 ATST A
 
-# sleep duration (10ms) (=15s)
-ATSP 5DC
+# sleep duration (10ms) (=120s)
+ATSP 2EE0
 
 # sleep mode
 ATSM 5

@@ -93,7 +93,7 @@ class XBeeController(object):
             else:
                 return frame
 
-    def send_frame(self, api_identifier, api_frame):
+    def _send_frame(self, api_identifier, api_frame):
         """
         send an API frame
 
@@ -116,7 +116,7 @@ class XBeeController(object):
         self.fh.write(frame)
         return frame_no
 
-    def _handle_rx_io(self, address_bytes, cmd_data):
+    def _dispatch_rx_io(self, address_bytes, cmd_data):
         """Called to handle an rx_io frame
 
         :param address_bytes: number of bytes of source address (either 2 or 8)
@@ -170,36 +170,56 @@ class XBeeController(object):
             if self.on_api_frame:
                 self.on_api_frame(address, rssi, sample)
 
-    def handle_at_response(self, expected_frame_no, multi_response,
+    def _dispatch_frame(self, frame):
+        """Dispatch a received frame to relevant handlers"""
+        rx_id = ord(frame[0])
+        if rx_id == self.RX_IO_64:
+            self._dispatch_rx_io(8, frame[1:])
+        elif rx_id == self.RX_IO_16:
+            self._dispatch_rx_io(2, frame[1:])
+        else:
+            logger.info("ignoring unhandled msg %02x", rx_id)
+
+    def _await_at_response(self, expected_frame_no, multi_response,
                            remote_command=False):
-        response_offset = 2 # frameno, id
         if remote_command:
             expected_response = self.REMOTE_COMMAND_RESPONSE
-            response_offset += 8 + 2
         else:
             expected_response = self.AT_COMMAND_RESPONSE
 
         while True:
-            # todo: make this go via receive()
             resp=self._read_frame()
 
             (rx_id, rx_frame_no) = unpack(">BB", resp[0:2])
 
             if rx_frame_no != expected_frame_no:
-                raise Exception("Unexpected seqno %02x" % rx_frame_no)
+                self._dispatch_frame(resp)
+                continue
 
             if rx_id != expected_response:
                 raise Exception("Unexpected response type %02x" % rx_id)
 
-            (cmdname,rc) = unpack(">2sB", resp[response_offset:
-                                               response_offset+3])
+            if remote_command:
+                (addr64, addr16) = unpack(">QH", resp[2:12])
+                response_offset = 12
+            else:
+                response_offset = 2
 
-            if rc != 0:
-                print "<< ERROR %i" % rc
-                raise Exception("Error from API command")
+            (cmdname, rc) = unpack(">2sB", resp[response_offset:
+                                                response_offset+3])
 
             result = resp[response_offset+3:]
-            print "<< OK", format_bytes(result)
+
+            msg = "%s: %s(%i) %s" % (cmdname, "ERROR" if rc else "OK", rc,
+                                     format_bytes(result))
+            if remote_command:
+                logger.info("<< (%x/%x) %s",
+                            addr64, addr16, msg)
+            else:
+                logger.info("<< %s", msg)
+
+            if rc != 0:
+                raise Exception("Error from API command")
 
             if not multi_response:
                 yield result
@@ -223,8 +243,8 @@ class XBeeController(object):
 
         logger.info(">> %s %s", cmd, "" if arg_val is None else arg_val)
         arg_string = format_arg_val(arg_val)
-        frame_no = self.send_frame(self.AT_COMMAND, cmd+arg_string)
-        return list(self.handle_at_response(frame_no, multi_response))
+        frame_no = self._send_frame(self.AT_COMMAND, cmd+arg_string)
+        return list(self._await_at_response(frame_no, multi_response))
 
     def transmit_64(self, dest, data):
         """send data to a remote node
@@ -235,8 +255,8 @@ class XBeeController(object):
 
         print ">> (%x) %s" % (dest, data)
         api_frame = pack(">QB",dest,0)+data
-        frame_no = self.send_frame(self.TX_REQUEST_64,api_frame)
-        # todo: make this go via receive()
+        frame_no = self._send_frame(self.TX_REQUEST_64,api_frame)
+        # todo: handle unexpected responses
         self._read_frame()
 
     def transmit_16(self, dest, data):
@@ -248,10 +268,9 @@ class XBeeController(object):
 
         print ">> (%x) %s" % (dest, data)
         api_frame = pack(">HB",dest,0)+data
-        frame_no = self.send_frame(self.TX_REQUEST_16,api_frame)
-        # todo: make this go via receive()
+        frame_no = self._send_frame(self.TX_REQUEST_16,api_frame)
+        # todo: handle unexpected responses
         self._read_frame()
-
 
     def remote_at_command(self, dest, cmd, arg_val=None, opts=0,
                           multi_response=False):
@@ -276,20 +295,11 @@ class XBeeController(object):
             dest_64 = 0
             dest_16 = dest
         api_frame = pack(">QHB",dest_64,dest_16,opts)+cmd+arg_string
-        frame_no = self.send_frame(self.REMOTE_AT_COMMAND, api_frame)
+        frame_no = self._send_frame(self.REMOTE_AT_COMMAND, api_frame)
 
-        return list(self.handle_at_response(frame_no, multi_response, True))
+        return list(self._await_at_response(frame_no, multi_response, True))
 
     def receive(self):
         """Receive, decode and dispatch a single API frame"""
-        
         resp=self._read_frame()
-
-        rx_id = ord(resp[0])
-
-        if rx_id == self.RX_IO_64:
-            self._handle_rx_io(8, resp[1:])
-        elif rx_id == self.RX_IO_16:
-            self._handle_rx_io(2, resp[1:])
-        else:
-            logger.info("ignoring unhandled msg %02x", rx_id)
+        self._dispatch_frame(resp)
