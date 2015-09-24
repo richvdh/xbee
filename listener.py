@@ -9,8 +9,6 @@
 # TODO: run under supervisord
 #
 # TODO: send an email if we do not get a reading for a while
-#
-# TODO: reduce sample frequency
 
 import logging
 import logging.config
@@ -105,7 +103,10 @@ class Counter(object):
                                "graphite server returned no data"
         # data is returned as a list of [value, time] pairs. get the last
         # known value.
-        return data[-1][0]
+        result = data[-1][0]
+        assert result is not None, "Unable to intialise from state file, and " \
+                                   "graphite server returned null data"
+        return result
 
     def load_state(self):
         try:
