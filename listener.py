@@ -12,17 +12,19 @@
 
 import logging
 import logging.config
+import os.path
+import requests
 import shutil
 import socket
+import sys
 import time
-import requests
+import yaml
 
 from xbee_controller import XBeeController
 
 CACERTS_PATH = '/etc/ssl/certs/ca-certificates.crt'
 
 STATE_FILE = '/var/run/xbee/state'
-LOG_FILE = '/var/log/xbee/xbee.log'
 
 # connect via IP to force a connection over the VPN
 CARBON_SERVER = '10.87.87.1'
@@ -149,19 +151,11 @@ class Counter(object):
 
 
 def configure_logging():
-    formatter = logging.Formatter(
-        '%(asctime)-15s %(levelname)-5s %(name)s:%(message)s')
+    path = os.path.join(os.path.dirname(sys.argv[0]), 'logging.yaml')
 
-    handler = logging.handlers.TimedRotatingFileHandler(
-        filename=LOG_FILE,
-        when='midnight',
-        backupCount=5,
-    )
-    handler.setFormatter(formatter)
-
-    root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.DEBUG)
+    with open(path, 'rt') as f:
+            config = yaml.load(f.read())
+        logging.config.dictConfig(config)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,18 @@
+version: 1
+disable_existing_loggers: False
+
+formatters:
+    simple:
+        format: "%(asctime)-15s %(levelname)-5s %(name)s:%(message)s"
+
+handlers:
+    file:
+        class: logging.handlers.TimedRotatingFileHandler
+        formatter: simple
+        filename: /var/log/xbee/xbee.log
+        when: midnight
+        backupCount: 5
+
+root:
+    level: DEBUG
+    handlers: [file]
