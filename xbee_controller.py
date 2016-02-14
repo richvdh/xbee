@@ -210,7 +210,19 @@ class XBeeController(object):
 
             result = resp[response_offset+3:]
 
-            msg = "%s: %s(%i) %s" % (cmdname, "ERROR" if rc else "OK", rc,
+            if rc == 0:
+                rc_str = "OK"
+            elif rc == 1:
+                rc_str = "Error"
+            elif rc == 2:
+                rc_str = "Invalid command"
+            elif rc == 3:
+                rc_str = "Invalid Parameter"
+            elif rc == 4:
+                rc_str = "No response"
+            else:
+                rc_str = "[unknown error code]"
+            msg = "%s: %i(%s) %s" % (cmdname, rc, rc_str,
                                      format_bytes(result))
             if remote_command:
                 logger.info("<< (%x/%x) %s",
