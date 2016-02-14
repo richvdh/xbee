@@ -6,8 +6,6 @@
 # TODO: handle sending data in a separate thread, so that we get accurate
 # timestamps even when the sender thread gets behind
 #
-# TODO: run under supervisord
-#
 # TODO: send an email if we do not get a reading for a while
 
 import datetime
