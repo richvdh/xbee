@@ -10,6 +10,7 @@
 #
 # TODO: send an email if we do not get a reading for a while
 
+import datetime
 import logging
 import logging.config
 import os.path
@@ -107,10 +108,11 @@ class Counter(object):
                                "graphite server returned no data"
         # data is returned as a list of [value, time] pairs. get the last
         # known value.
-        result = data[-1][0]
-        assert result is not None, "Unable to intialise from state file, and " \
-                                   "graphite server returned null data"
-        return result
+        for (val, ts) in reversed(data):
+            if val is not None:
+                return (val, ts)
+        raise Exception("Unable to intialise from state file, and "
+                        "graphite server returned null data")
 
     def load_state(self):
         try:
@@ -120,8 +122,9 @@ class Counter(object):
         except IOError, e:
             logger.warn("Error reading from state file %s: %s. Attempting to "
                         "load from graphite server", STATE_FILE, e)
-            self.counter = self._read_state_from_server()
-            logger.info("initialised state from graphite server: %i",
+            (self.counter, ts) = self._read_state_from_server()
+            logger.info("initialised state from graphite server @%s: %i",
+                        datetime.datetime.fromtimestamp(ts).strftime("%c"),
                         self.counter)
 
     def save_state(self):
