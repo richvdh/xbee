@@ -24,7 +24,9 @@ from xbee_controller import XBeeController
 
 CACERTS_PATH = '/etc/ssl/certs/ca-certificates.crt'
 
-STATE_FILE = '/var/run/xbee/state'
+# this needs to be in a subdir so that we can atomically create
+# a new copy.
+STATE_FILE = '/run/xbee/state'
 
 # connect via IP to force a connection over the VPN
 CARBON_SERVER = '10.87.87.1'
