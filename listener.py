@@ -154,8 +154,8 @@ def configure_logging():
     path = os.path.join(os.path.dirname(sys.argv[0]), 'logging.yaml')
 
     with open(path, 'rt') as f:
-            config = yaml.load(f.read())
-        logging.config.dictConfig(config)
+        config = yaml.load(f.read())
+    logging.config.dictConfig(config)
 
 
 if __name__ == "__main__":
