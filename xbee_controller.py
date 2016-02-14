@@ -55,8 +55,28 @@ class XBeeController(object):
 
     def configure(self):
         flags = termios.tcgetattr(self.fh)
-   
-        flags[3] &= ~termios.CRTSCTS # cflag
+
+        # flags is [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
+        # the following is basically the same as 'raw' mode.
+
+        flags[0] &= ~(termios.IGNBRK | termios.BRKINT) # line breaks read as \0
+        flags[0] &= ~(termios.PARMRK) # parity errors read as \0
+        flags[0] &= ~(termios.ISTRIP) # don't strip 8th bit
+        flags[0] &= ~(termios.INLCR | termios.IGNCR | termios.ICRNL) # don't mess with CR/NL
+        flags[0] &= ~(termios.IXON) # ignore XON/XOFF
+
+        flags[1] &= ~(termios.OPOST) # don't do output processing
+
+        # disable most special-character processing
+        flags[2] &= ~(termios.ECHO | termios.ECHONL | termios.ICANON | termios.ISIG
+                         | termios.IEXTEN)
+
+        # set the line discipline
+        flags[3] &= ~(termios.CSIZE | termios.PARENB | termios.CSTOPB)
+        flags[3] |= termios.CS8
+
+        # disable CTS/RTS for now (we probablyoy ought to be able to make this work?
+        flags[2] &= ~termios.CRTSCTS
         flags[4] = termios.B9600 # ispeed
         flags[5] = termios.B9600 # ospeed
 
