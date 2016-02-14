@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+#
+# use the API to send an AT command to the device (or the remote device)
+#
+# example: api.py -r ST 1500
 
 import logging
 import optparse
